@@ -14,6 +14,10 @@ export type Flow = {
   phase: Phase
   isFinished: boolean
   tasks: PlannedTask[]
+  /** Local change: a flow the mod started itself because helpers ran with no reported plan. */
+  isAuto?: boolean
+  /** The helpers an automatic flow is still waiting on. */
+  autoIds?: string[]
 }
 
 export type AgentStatus = 'running' | 'done' | 'failed'

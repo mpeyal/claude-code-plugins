@@ -180,7 +180,27 @@ const blank = (): Flow => ({
 })
 
 const isNewFlow = (prev: Flow | null, input: ProgressInput): boolean =>
-  !prev || prev.isFinished || (input.title !== undefined && clip(input.title.trim(), MAX_TITLE) !== prev.title)
+  !prev ||
+  prev.isFinished ||
+  prev.isAuto === true ||
+  (input.title !== undefined && clip(input.title.trim(), MAX_TITLE) !== prev.title)
+
+// Local change: helpers started outside savvy-flow raise the band too, one task per helper,
+// unless a reported flow is still running and owns the band.
+const AUTO_TITLE = 'Helpers at work'
+const withHelper = (prev: Flow | null, id: string): Flow | null => {
+  if (prev && !prev.isFinished && !prev.isAuto) return prev
+  const base: Flow =
+    prev && prev.isAuto && !prev.isFinished ? prev : { ...blank(), title: AUTO_TITLE, phase: 'delegate', isAuto: true, autoIds: [] }
+  return { ...base, total: base.total + 1, running: base.running + 1, autoIds: [...(base.autoIds ?? []), id] }
+}
+const helperDone = (prev: Flow | null, id: string): Flow | null => {
+  if (!prev || !prev.isAuto || prev.isFinished || !prev.autoIds?.includes(id)) return prev
+  const done = Math.min(prev.total, prev.done + 1)
+  const running = Math.max(0, prev.running - 1)
+  const isOver = running === 0 && done >= prev.total
+  return { ...prev, done, running, autoIds: prev.autoIds.filter(x => x !== id), ...(isOver ? { isFinished: true, phase: 'close' as const } : {}) }
+}
 
 // Only a known tier is kept: the name is later a key into the tier tables.
 const tierName = (v: string): string => {
@@ -951,8 +971,10 @@ export const register: Register = (on, options) => {
     if (e.subagentType.startsWith('savvy-')) {
       const f = await read($, flow)
       await autoOpen($, f && !f.isFinished ? f.title : 'savvy-flow')
-    } else if (options.autoOpen === 'any') {
-      await autoOpen($, 'any-agent')
+    } else {
+      const id = started.agentId
+      if (id && !e.parentAgentId) await update($, flow, prev => withHelper(prev, id))
+      if (options.autoOpen === 'any') await autoOpen($, 'any-agent')
     }
     return started
   })
@@ -1022,6 +1044,7 @@ export const register: Register = (on, options) => {
           }
         }),
       )
+      await update($, flow, prev => helperDone(prev, agentId))
       await update($, now, () => at)
     }
     return next(e)
