@@ -195,12 +195,15 @@ export const register: Register = on => {
     }
 
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 100
-    // The thresholds are in terminal cells. The desktop reports columns of about 8 px, not the
-    // 12 px those cells stand for, so its columns are scaled down before choosing a layout.
+    // The terminal's thresholds are in cells. The desktop reports columns of about 8 px, so it
+    // decides in pixels: one row from 720 px, shedding the reset times below 980 px and the
+    // long dot bars below 860 px before it would ever stack.
     const isDesktopLike = e.surface !== 'terminal'
-    const kind = kindOf(isDesktopLike ? Math.floor((columns * 8) / 12) : columns)
+    const px = columns * 8
+    const kind: ReturnType<typeof kindOf> = isDesktopLike ? (px >= 720 ? 'wide' : px >= 500 ? 'stacked' : 'tight') : kindOf(columns)
     const isWide = kind === 'wide'
-    const cells = kind === 'tight' ? TIGHT_CELLS : CELLS
+    const showResets = !isDesktopLike || px >= 980
+    const cells = kind === 'tight' || (isDesktopLike && isWide && px < 860) ? TIGHT_CELLS : CELLS
 
     const parts = (w: Window) => {
       const left = Math.max(0, Math.round((100 - w.percentUsed) * 10) / 10)
@@ -224,7 +227,7 @@ export const register: Register = on => {
           <Text color={C.EMPTY}>{p.d.off}</Text>
           <Text color={p.col} bold> {p.left}% left</Text>
           {p.left < LOW_AT ? <Text color={C.TEXT} bold> LOW</Text> : null}
-          {p.reset ? <Text color={C.MUTED}> · {p.reset}</Text> : null}
+          {showResets && p.reset ? <Text color={C.MUTED}> · {p.reset}</Text> : null}
         </Box>
       )
     }
@@ -305,7 +308,7 @@ export const register: Register = on => {
     let rows
     if (kind === 'wide') {
       rows = (
-        <Box key="row" flexDirection="row" paddingX="md" alignItems="center">
+        <Box key="row" flexDirection="row" flexWrap="wrap" paddingX="md" alignItems="center">
           {label}
           {usage}
           {open ? null : (
@@ -358,10 +361,16 @@ export const register: Register = on => {
 
     let card = null
     if (open && Svg) {
-      const c = cardSvg(view, kind, isDesktopLike ? columns * 8 - 16 : bandPx(columns))
+      // On the desktop the card keeps its short one-row layout, drawn at least 1020 px wide
+      // and scaled down to the band, so it never grows tall enough to scroll.
+      const cardKind: ReturnType<typeof kindOf> = isDesktopLike && kind !== 'tight' ? 'wide' : kind
+      const shown = isDesktopLike ? px - 16 : bandPx(columns)
+      const drawn = cardKind === 'wide' ? Math.max(shown, 1020) : shown
+      const c = cardSvg(view, cardKind, drawn)
+      const cardH = Math.round((c.h * shown) / drawn)
       card = (
         <Box key="card" flexDirection="row">
-          <Svg source={c.source} alt={c.alt} width={c.w} height={c.h} isInteractive={kind !== 'tight'} />
+          <Svg source={c.source} alt={c.alt} width={shown} height={cardH} isInteractive={kind !== 'tight'} />
         </Box>
       )
     }

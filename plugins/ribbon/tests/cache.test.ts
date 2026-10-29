@@ -52,8 +52,10 @@ test('a cold cache opens the card with the re-cache price, and Hide folds it to 
   const card = await band.find({ key: 'card' })
   expect(card).toBeDefined()
   expect(JSON.stringify(card)).toContain('Cache cold. Idle 3d 9h. Next message re-caches 770k tokens.')
-  // The page's width: 120 desktop columns of about 8 px, less 16, is a 944 px band.
-  expect(JSON.stringify(card)).toContain('width=\\"944\\"')
+  // 120 desktop columns of about 8 px, less 16, is a 944 px band: the short card is drawn
+  // 1020 px wide and shown at 944, so it keeps its one-row layout instead of growing tall.
+  expect(JSON.stringify(card)).toContain('width=\\"1020\\"')
+  expect(JSON.stringify(card)).toContain('"width":944')
 
   await band.press({ key: 'cache-fold' })
   expect(await band.find({ key: 'card' })).toBeUndefined()
