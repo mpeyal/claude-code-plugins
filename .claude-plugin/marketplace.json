@@ -1,0 +1,16 @@
+{
+  "name": "mpeyal-plugins",
+  "owner": { "name": "mpeyal" },
+  "plugins": [
+    {
+      "name": "ribbon",
+      "source": "./plugins/ribbon",
+      "description": "Usage band above the prompt: 7-day and 5-hour usage left, reset times, and whether the prompt cache is warm. Light and dark themes (/ribbon-theme), coffee-cup cache indicator."
+    },
+    {
+      "name": "savvy-progress",
+      "source": "./plugins/savvy-progress",
+      "description": "Task progress band above the prompt and a live Agents panel (/agents-info): helpers with model, effort, progress, context, cost and time."
+    }
+  ]
+}
