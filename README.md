@@ -9,6 +9,12 @@ My Claude Code mods, in one private marketplace.
 
 The two stack together: savvy-progress on top, ribbon's usage row underneath.
 
+Tools (not plugins, set up on their own):
+
+| Tool | What it does |
+|---|---|
+| [claude-pinger](tools/claude-pinger) | Windows scheduled task that sends `hello` on Haiku when no 5-hour window is open, so resets land earlier in the day; also reports usage per window. |
+
 ## Install
 
 In a terminal (this repository is private, so GitHub must be signed in on the machine, for example with `gh auth login`):
