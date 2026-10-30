@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { AgentRun, Flow, Panel, Phase, PlannedTask } from '../types'
+import type { AdvisorInfo, AgentRun, Flow, Panel, Phase, PlannedTask } from '../types'
 
 const flow = atom({ plugin: 'savvy-progress', key: 'flow' } as const, null)
 const agents = atom({ plugin: 'savvy-progress', key: 'agents' } as const, [])
@@ -11,6 +11,7 @@ const panel = atom({ plugin: 'savvy-progress', key: 'panel' } as const, {
   autoOpenedFor: '',
 })
 const now = atom({ plugin: 'savvy-progress', key: 'now' } as const, 0)
+const advisor = atom({ plugin: 'savvy-progress', key: 'advisor' } as const, { model: '', consults: 0, lastMs: 0, totalMs: 0 } as AdvisorInfo)
 
 const TOOL = 'mcp__savvy-progress__progress'
 const STEP_TOOL = 'mcp__savvy-progress__step'
@@ -470,6 +471,22 @@ const modelName = (id: string): string => {
   const [, family = '', major = '', minor] = m ?? []
   if (!family) return id.replace(/^claude-/, '').replace(/\[.*\]$/, '') || '—'
   return `${family.charAt(0).toUpperCase()}${family.slice(1).toLowerCase()} ${major}${minor ? '.' + minor : ''}`
+}
+
+// Local change: the advisor row. No "ago": the pane's clock ticks only while helpers run.
+const advisorLabel = (a: AdvisorInfo): string => {
+  const name = a.model ? modelName(a.model).replace(/^./, c => c.toUpperCase()) : ''
+  const count = `${a.consults} ${a.consults === 1 ? 'consult' : 'consults'}`
+  return ['Advisor', name, count, `last ${fmtTime(a.lastMs)}`, `total ${fmtTime(a.totalMs)}`].filter(Boolean).join(' · ')
+}
+
+async function advisorModel($: EngineInterface): Promise<string> {
+  try {
+    const v = (await $.settings.read({ key: 'advisorModel' })) as unknown
+    return typeof v === 'string' ? v : ''
+  } catch {
+    return ''
+  }
 }
 
 const norm = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
@@ -984,7 +1001,22 @@ export const register: Register = (on, options) => {
     const result = yield* next(e)
     const agentId = e.agentId
     const usage = result.usage
-    if (!agentId || !usage) return result
+    // Local change: the advisor runs inside the main thread's own request, never as a subagent,
+    // so its consults are read off each finished step's server tool uses.
+    if (!agentId) {
+      const consults = (result.serverToolUses ?? []).filter(u => u.name === 'advisor' && u.endedAt !== undefined)
+      if (consults.length > 0) {
+        const model = await advisorModel($)
+        await update($, advisor, prev =>
+          consults.reduce((acc, u) => {
+            const ms = Math.max(0, (u.endedAt ?? u.startedAt) - u.startedAt)
+            return { ...acc, consults: acc.consults + 1, lastMs: ms, totalMs: acc.totalMs + ms }
+          }, { ...prev, model: model || prev.model }),
+        )
+      }
+      return result
+    }
+    if (!usage) return result
 
     const model = usage.model || e.model
     await update($, agents, list =>
@@ -1057,6 +1089,7 @@ export const register: Register = (on, options) => {
     const list = await read($, agents)
     const f = await read($, flow)
     const p: Panel = await read($, panel)
+    const adv = await read($, advisor)
     const at = Math.max(await read($, now), ...list.map(a => a.startedAt), 0)
 
     const running = list.filter(a => a.status === 'running').reverse()
@@ -1105,7 +1138,7 @@ export const register: Register = (on, options) => {
         )
       }
       const shownDone = p.isDoneCollapsed ? 0 : finished.length
-      const lines = 1 + (isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (planned.length > 0 ? 1 : 0)
+      const lines = 1 + (adv.consults > 0 ? 1 : 0) + (isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (planned.length > 0 ? 1 : 0)
       const gridH = headerHeight(title) + lines * LINE_H + (running.length + shownDone) * 66 + planned.length * 46
       return (
         <Box flexDirection="column">
@@ -1117,6 +1150,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column" position="absolute" top={0} left={0} right={0} alignItems={align}>
             <Svg source={headerSvg(W, title, t)} alt={title ? `${title}: ${summary}` : summary} width={W} height={headerHeight(title)} />
             {toggleCompact}
+            {adv.consults > 0 && section('h-adv', advisorLabel(adv))}
             {isEmpty && <Text dimColor>{s.empty}</Text>}
             {running.length > 0 && section('h-run', `${s.running} · ${running.length}`)}
             {running.map(a => (
@@ -1183,6 +1217,11 @@ export const register: Register = (on, options) => {
         <Text dimColor>
           ≈{fmtCost(t.cost)} · {fmtTokens(t.tokens)} {s.tokensWord} · {fmtTime(t.time)}
         </Text>
+        {adv.consults > 0 && (
+          <Text dimColor wrap="truncate-end">
+            {advisorLabel(adv)}
+          </Text>
+        )}
         {p.isCompact ? (
           <Text wrap="truncate-end">
             {[...running, ...finished].map(a => (

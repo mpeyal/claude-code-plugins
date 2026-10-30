@@ -43,6 +43,7 @@ On Windows with the Claude desktop app, the `claude` on PATH may be older than t
 **savvy-progress**
 - The desktop band row leaves 150 px for the crew count and dismiss button (was 96, which clipped the dismiss).
 - Any helpers (subagents) started from the main session raise the band by themselves as "Helpers at work", one task per helper, reading Done when all finish. A plan reported through its `progress` tool still takes over the band.
+- The Agents panel shows an Advisor row (model, consults this session, last and total consult time) when `/advisor` is on and has been consulted. The advisor runs inside Claude's own request, so the row updates after each consult, not live.
 
 ## Updating
 

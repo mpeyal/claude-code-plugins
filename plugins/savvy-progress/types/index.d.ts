@@ -50,6 +50,15 @@ export type Panel = {
   autoOpenedFor: string
 }
 
+/** Local change: the advisor's consults this session, read off the main thread's requests. */
+export type AdvisorInfo = {
+  /** The advisor setting as stored (an alias such as `opus`), when known. */
+  model: string
+  consults: number
+  lastMs: number
+  totalMs: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'savvy-progress': {
@@ -57,6 +66,7 @@ declare module 'claude-code' {
       agents: AgentRun[]
       panel: Panel
       now: number
+      advisor: AdvisorInfo
     }
   }
 }
