@@ -480,6 +480,17 @@ const advisorLabel = (a: AdvisorInfo): string => {
   return ['Advisor', name, count, `last ${fmtTime(a.lastMs)}`, `total ${fmtTime(a.totalMs)}`].filter(Boolean).join(' · ')
 }
 
+const withConsult = (prev: AdvisorInfo, id: string, ms: number, model: string): AdvisorInfo => {
+  if (prev.seen?.includes(id)) return prev
+  return {
+    model: model || prev.model,
+    consults: prev.consults + 1,
+    lastMs: Math.max(0, ms),
+    totalMs: prev.totalMs + Math.max(0, ms),
+    seen: [...(prev.seen ?? []), id].slice(-50),
+  }
+}
+
 async function advisorModel($: EngineInterface): Promise<string> {
   try {
     const v = (await $.settings.read({ key: 'advisorModel' })) as unknown
@@ -943,6 +954,19 @@ export const register: Register = (on, options) => {
     return { result: matched ? 'ok' : `ignored: no panel row for agent ${agentId}` }
   })
 
+  // Local change: where the advisor arrives as an ordinary tool call (the desktop app does this),
+  // time the call itself; its id keeps it from counting twice.
+  on('tool.call', { tool: 'advisor' }, async ($, e, next) => {
+    if (e.agentId) return next(e)
+    const startedAt = await $.clock.now()
+    const result = await next(e)
+    const ms = (await $.clock.now()) - startedAt
+    const model = await advisorModel($)
+    const id = String(e.tool_use_id ?? `advisor-${startedAt}`)
+    await update($, advisor, prev => withConsult(prev, id, ms, model))
+    return result
+  }).catch(($, e, next) => next(e))
+
   // Safety net: worker launches move the faint layer even if the orchestrator forgets to report.
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     const type = String(e.subagent_type ?? '')
@@ -1008,10 +1032,7 @@ export const register: Register = (on, options) => {
       if (consults.length > 0) {
         const model = await advisorModel($)
         await update($, advisor, prev =>
-          consults.reduce((acc, u) => {
-            const ms = Math.max(0, (u.endedAt ?? u.startedAt) - u.startedAt)
-            return { ...acc, consults: acc.consults + 1, lastMs: ms, totalMs: acc.totalMs + ms }
-          }, { ...prev, model: model || prev.model }),
+          consults.reduce((acc, u) => withConsult(acc, u.id, (u.endedAt ?? u.startedAt) - u.startedAt, model), prev),
         )
       }
       return result

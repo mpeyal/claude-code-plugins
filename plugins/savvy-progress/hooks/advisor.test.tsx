@@ -34,6 +34,7 @@ async function session($: Engine, on: On) {
   on('settings.read', async () => ({ value: { advisorModel: 'opus' } }) as never)
   on('session.start', async () => ({ cwd: '/repo' }) as never)
   on('ui.open', async () => ({ value: { isPlaced: true } }) as never)
+  on('tool.call', async () => ({ result: { text: 'advice' } }) as never)
   await $.session.start({ source: 'startup', cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
 }
 
@@ -55,4 +56,23 @@ test('a main-thread request that consulted the advisor shows its row on every su
     expect((await ui.findAll({ type: 'Text', text: ROW })).length).toBe(1)
     await ui.unmount()
   }
+})
+
+test('an advisor that arrives as an ordinary tool call is counted too', async ($, on) => {
+  await session($, on)
+  await $.tool.call({ tool: 'advisor', tool_use_id: 'x1' } as never)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' } as never)
+  expect((await ui.findAll({ type: 'Text', text: 'Advisor · Opus · 1 consult · last 0:00 · total 0:00' })).length).toBe(1)
+  await ui.unmount()
+})
+
+test('a consult seen both as a tool call and in the request counts once', async ($, on) => {
+  await session($, on)
+  await $.tool.call({ tool: 'advisor', tool_use_id: 'adv1' } as never)
+  for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 2 } as never)) {
+  }
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' } as never)
+  // adv1 came first as the tool call (0 s); the request then adds only adv2 (27 s).
+  expect((await ui.findAll({ type: 'Text', text: 'Advisor · Opus · 2 consults · last 0:27 · total 0:27' })).length).toBe(1)
+  await ui.unmount()
 })

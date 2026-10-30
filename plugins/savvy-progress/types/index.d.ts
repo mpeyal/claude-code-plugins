@@ -57,6 +57,8 @@ export type AdvisorInfo = {
   consults: number
   lastMs: number
   totalMs: number
+  /** Call ids already counted, so a consult seen both ways counts once. */
+  seen?: string[]
 }
 
 declare module 'claude-code' {
